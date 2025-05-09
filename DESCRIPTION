@@ -1,0 +1,25 @@
+Package: XgModel
+Type: Package
+Title: Creating a XG model using Caret
+Version: 0.1.0
+Authors@R: (
+    person(
+      "Raghav", "Pradhan",
+      email = "pradhanraghav373@gmail.com",
+      role = c("aut", "cre")
+    )
+  )
+Description: A run down on creating a Xg-Model that
+    predicts the probabilty of a shot being goal
+    using past match data.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Depends: R version 4.4.3,
+  tidyverse,
+  ggsoccer,
+  jsonlite,
+  caret,
+  pROC
+URL: https://github.com/yvescandoit/XgModel
+BugReports: https://github.com/yvescandoit/XgModel/issues
