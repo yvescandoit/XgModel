@@ -1,0 +1,258 @@
+---
+title: "Xg Model"
+output: pdf_document
+date: "2025-04-19"
+---
+
+# Overview
+
+Football is a sport where every year something new is introduced, so in the year 2012 a new metric X-g was introduced 
+that changed the whole game and how we look at it. Let us first understand what X-g is & how it works
+
+X-g is a statistic metric that is used in football to predict the probability of a shot being a goal. It assigns
+a value of 0-1 to each shot where if assigned 0.2, 2 out of 10 shots will be a goal meaning higher the value higher 
+is the chance of being a goal.
+
+I will be training a X-g Model that can predict the X-g value of a shot being a goal or not based on historical data of similar shots
+
+# Gathering & Cleaning Data
+
+Loading the libraries & the Data set
+
+```{r, warning=FALSE,message=FALSE}
+.libPaths("/home/rgds/R/x86_64-pc-linux-gnu-library/4.4")  #path to library
+
+library(jsonlite)
+library(tidyverse)
+library(ggsoccer)
+library(caret)
+library(pROC)
+```
+
+
+The dataset I will be using contains the **Event Data** of the matches played in the **Bundesliga** (German First Div)
+which i got from [wyscout](https://doi.org/10.6084/m9.figshare.7770599.v1).
+
+```{r}
+germany <- jsonlite::fromJSON("events/events_Germany.json")
+germany <- as.data.frame(germany)         #converting it to a data frame
+head(germany)
+```
+
+We see that there is alot of unwanted variables in this data so first need to clean it throughly & also
+extract the x,y co-ordinates of the players who shot the ball for calculating new metrics.
+
+```{r}
+shots <- germany %>%
+       
+  filter(subEventName == "Shot") %>%                                            #filtering the rows with shot                                       
+  mutate(goal = if_else(sapply(tags,function(x) any(x$id[1] == 101)),1,0)) %>%  #Goal column with 1 , 0  
+  mutate(X = sapply(positions,function(x) X = x$x[1])) %>%                       #x co-rd of shot
+  mutate(Y = sapply(positions,function(x) Y = x$y[1])) %>%                       #y co-rd of shot
+  select(goal,X,Y) 
+
+```
+
+we could have just used the normal x-y Co-ordinate of the players, but to step things up I will be using the convention used by 
+[FOT(friends of Tracking)](https://www.youtube.com/watch?v=bpjLyFyLlXs), who have made a similar project about X-g but in python.
+
+So the two new metrics that i will be using are the **Distance** & **Shot Angle** metric as In Football, understanding the distance from the goal 
+and the shooting angle against the goal post is crucial for maximizing scoring chances.
+
+## Distance Helper function
+
+The distance metric is the straight-line distance from the player's position to the center of the goal line.
+it is calculated by using the pythagoreon theorem
+
+
+```{r}
+distance <- function(X,Y) {
+                                       
+  x <- 95                              # the width of the football field meters  
+  y <- 75                              # the height of the football field in meters
+  
+  x_dist <- (100 - X)*x/100        
+  y_dist <- abs(50 - Y)*y/100      
+  
+  distance <- sqrt(x_dist^2 + y_dist^2) #x-dist is the horizontal distance from the player to the goal line.
+                                        #(100%) along the x-axis "right edge
+                                        
+                                        #y-dist is the vertical distance from the player to the center o
+                                        #of the goal.(50%) along the y-axis "middle"
+  
+}
+```
+
+## Shot Angle Helper function
+
+The goal angle metric helps us to determine how much of the goal post is actually visible to the player while shooting
+meaning the bigger the goal angle better the chances of scoring.
+
+```{r}
+
+goal_angle <- function(X,Y) {
+  
+  x <- 95                              # the width of the football field meters  
+  y <- 75                              # the height of the football field in meters
+  
+  x_dist <- (100 - X)*x/100            # the horizontal distance from the shot taken to the right edge of the goal line(x-axis 100%)
+  y_dist <- abs(50 - Y)*y/100          # the vertical distance from the shot taken to the middle 
+  
+  
+  angle <- atan((7.32*x_dist)/(x_dist^2 + y_dist^2 - (7.32/2)^2))  #the "7.32" is the width of the goal post
+  angle <- ifelse(angle < 0,angle + pi,angle)                         
+  
+}
+```
+
+
+Now let's use these function to calculate the new metrics
+
+```{r}
+shots <- shots %>% 
+              mutate(Distance = distance(X,Y)) %>%
+              mutate(Shot_angle = goal_angle(X,Y)) %>%
+              mutate(goal = as.factor(goal)) 
+
+
+```
+
+
+# EDA - Analysis before training the model
+
+plotting the shot taken along with the ones that were counted as a goal.
+
+```{r}
+set.seed(123)  
+
+sampled_shots <- shots[sample(nrow(shots), 1000), ]     #the data set is too big so sampling 1000 random rows
+
+
+ggplot(sampled_shots) +
+  annotate_pitch(colour = "black",fill = "white") + 
+  geom_point(aes(x = X,y = Y,color = goal),alpha = 0.7) + #used gg soccer to plot the pitch
+  coord_cartesian(xlim = c(45, 100))
+
+```
+
+
+with the visuals we can easily deduce how these two metric are very important for our X-g model:
+
+- Distance =  we can see how most of the goals have been scored within or near the D-area meaning that the closer the player is higher 
+  is the chance of scoring the goal.
+
+- Shot Angle = the angel the shot was taken from can also be very important irrespective of the distance the ball was shot from , as 
+  we see the front of the goal line has a concentration of goal compared to the left and right side of the goal post indicating the shot angle matters alot
+  
+
+# Model Training
+
+Now coming to the main part of my X-G model project that is training the model to predict the Expected goals, There are plethora of ML algorithms that I can use  
+to train my model but since I have already done a project on [Testing ML prediction algorithms](https://rpubs.com/Yvescandoit/m9999) , I'll be going with 
+**Random Forest** that has the most accuracy among all the prediction algorithm.
+
+
+```{r, warning=FALSE}
+
+train_dat <- createDataPartition(shots$goal, p = 0.7,list = FALSE)  #splitting into 70% train and rest as test
+
+train_data <- shots[train_dat,]
+test_data <- shots[-train_dat,]
+```
+
+I will also be cross validating using k-fold CV 5 times and then use the model to predict the test data.
+
+```{r}
+set.seed(101)
+
+trcon <- trainControl(method = "cv",number = 5)
+
+train_rf <- train(goal ~.,data = train_data,method = "rf",trControl = trcon,verbose = FALSE)
+```
+
+
+# Accuracy of the Model (Model Fit)
+
+Firstly, let's test how accurately the model fits on our testing data through a confusion matrix.
+
+```{r}
+
+prediction <- predict(train_rf,test_data)
+
+confusionMatrix(prediction,test_data$goal)
+```
+
+The **Accuracy** of our model is *88%* which is really good but we see this model is heavily skewed towards predicting non-goal(0) 
+which is due to class imbalance, meaning that the high accuracy of this model is misleading as it only predicts non-goals(0)
+
+we can also see this in the Predictive values as well where it has a *high PPV of 90%* for non goals while its *NPV is only 36%* for goals 
+meaning it fails to reliably predict actual goal scoring opportunities. 
+
+In sports analytics , this model would be nothing more than a model that predicts every shot as a non goal which 
+can be fatal for tactical decision-making about scoring potential in a match.
+
+
+# ROC curve 
+
+A Receiver operating characteristic curve is one of the best ways to asses model fit for models that work on binary, which perfectly fits our test case.
+It works by plotting TPR(true positive rate) on y-axis & FPR(false positive rate) on x-axis at different threshold(eg changing what score counts as a positive
+prediction).
+
+A perfect model would shoot up to the left top edge(100% correct prediction) whereas a diagonal line means a random guesser(like a coin flip)
+so anything between 0.6-0.9 would be a good model while 1 would be the perfect model.
+
+
+```{r}
+
+pred_roc <- predict(train_rf,test_data,type = "prob")[,"1"] #only positive values
+
+roc_data <- roc(test_data$goal ,pred_roc)          #predicted goal
+
+ggroc(roc_data,colour = "green",size = 2) 
+
+```
+
+
+
+# Things we can improve 
+
+The model we just trained had a lot of flaws that could lead to a disaster if used in a real setting, so here are some of the things
+that we can improve on
+
+- Data = The main reason for our model to be this heavily skewed was the class imbalance of the data set where the the data for non-goal
+  overpowered the data with goal, so opting for a data set with similar class balance would not have lead to this much of a accuracy paradox where it
+  only predicts the majority class
+  
+- Metric = The metrics that we used to train the model is the type of data that can easily be collected(X,Y co-rd of player shot) or can be calculated(Goal angle,
+  Distance) , but metrics like *no of defenders, position of the keeper, the body part used to shoot* are the type of data hard to collect, so using complex
+  metrics like these would have definitely improved our models predictive abilities.
+  
+# conclusion
+
+In this project we cleaned, explored the data while also creating new metrics that was used to train our model, after checking the accuracy of the model
+which was not up to the mark we also came up with ways that can improve our model's predictive abilities.
+
+In conclusion, as discussed earlier in the overview **Football is a sport which keeps on evolving & so does the data collection of it** so in the near future
+there will be a time where we can implement data in our X-G model that we now consider impossible to collect.
+
+## MIT License
+
+Copyright (c) 2025 XgModel authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
