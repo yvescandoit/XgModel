@@ -33,6 +33,9 @@ library(pROC)
 The dataset I will be using contains the **Event Data** of the matches played in the **Bundesliga** (German First Div)
 which i got from [wyscout](https://doi.org/10.6084/m9.figshare.7770599.v1).
 
+After downloading the zip file & extracting the json data, one can proceed with football data of all big European countries,
+Although I have also provided a zip file that contains just the event data of Germany in a Json format.
+
 ```{r}
 germany <- jsonlite::fromJSON("events/events_Germany.json")
 germany <- as.data.frame(germany)         #converting it to a data frame
