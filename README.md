@@ -17,7 +17,7 @@ The main goal of this project is to train a model that can predict the xG value 
 ---
 
 
-## Getting Started
+## Steps required
 
 ### 1. Requirements
 
@@ -25,6 +25,22 @@ The main goal of this project is to train a model that can predict the xG value 
 - RStudio 
 - Packages: `rmarkdown`, `knitr` & other pckgs that are mentioned in the Description file.
 
-install.packages(c("rmarkdown","knitr"))
+`install.packages(c("rmarkdown","knitr"))`
 
+### 2. Clone or Download the Repository
 
+To clone the repo just open the terminal & run this.
+
+`git clone https://github.com/yvescnadoit/XgModel`
+
+Or u can download it manually by ZIP file
+
+### 3. Generating the Report
+
+- Firstly set the working directory to this project Repo
+
+  `setwd("path/to/XgModel/analysis/x-gmodel.rmd")`
+
+- Then finally run the following command to generate the Markdown file.
+
+ `rmarkdown::render("X-g_model.rmd",output_foramat = "github_document")`
