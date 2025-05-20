@@ -17,4 +17,14 @@ The main goal of this project is to train a model that can predict the xG value 
 ---
 
 
+## Getting Started
+
+### 1. Requirements
+
+- R (≥ 4.0.0)
+- RStudio 
+- Packages: `rmarkdown`, `knitr` & other pckgs that are mentioned in the Description file.
+
+install.packages(c("rmarkdown","knitr"))
+
 
